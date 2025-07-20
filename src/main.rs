@@ -5,10 +5,16 @@ mod config;
 mod mpv_ipc;
 
 #[derive(Debug, Serialize, Deserialize)]
-struct Response {
-    data: Option<Value>,
-    request_id: usize,
-    error: String,
+#[serde(untagged)]
+enum Response {
+    Response {
+        data: Option<Value>,
+        request_id: usize,
+        error: String,
+    },
+    Event {
+        event: String,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -25,6 +31,7 @@ enum CommandType {
     SetProperty { property: Property, value: Value },
     GetProperty { property: Property },
     ObserveProperty { property: Property, id: i64 },
+    UnobserveProperty { property: Property, id: i64 },
     GetVersion {},
     ClientName {},
     GetTimeUs {},
@@ -51,6 +58,7 @@ enum Property {
     StreamPos,
     StreamEnd,
     Duration,
+    Pause,
 }
 
 impl Serialize for CommandType {
@@ -77,6 +85,9 @@ impl Serialize for CommandType {
                 json!(["get_time_us"])
             }
             CommandType::ObserveProperty { id, property } => {
+                json!(["observe_property", id, property])
+            }
+            CommandType::UnobserveProperty { id, property } => {
                 json!(["observe_property", id, property])
             }
         };
