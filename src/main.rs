@@ -15,6 +15,8 @@ struct Response {
 struct MpvCommand {
     command: CommandType,
     request_id: i64,
+    #[serde(rename = "async")]
+    is_async: bool,
 }
 
 // Thanks to the docs: https://github.com/mpv-player/mpv/blob/master/DOCS/man/ipc.rst#id7
@@ -91,6 +93,7 @@ fn main() -> std::io::Result<()> {
             command: CommandType::GetProperty {
                 property: Property::Duration,
             },
+            is_async: false,
         },
     )?;
 
