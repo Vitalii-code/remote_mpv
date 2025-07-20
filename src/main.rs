@@ -1,51 +1,100 @@
-use serde::{Deserialize, Serialize};
-use std::io::prelude::*;
-use std::net::Shutdown;
-use std::os::unix::net::UnixStream;
+use crate::config::MPV_SOCKET_PATH;
+use serde::{Deserialize, Serialize, Serializer};
+use serde_json::Value;
+mod config;
+mod mpv_ipc;
 
-// fn to_chars(array, array_size: u32) -> String {
-//     // this converts an array to a string
-//     return String::new()
-// }
 #[derive(Debug, Serialize, Deserialize)]
 struct Response {
-    data: Option<bool>,
+    data: Option<Value>,
     request_id: usize,
     error: String,
 }
 
-// #[derive(Debug, Serialize, Deserialize)]
-// struct Command {
-//     command
-// }
+#[derive(Debug, Serialize)]
+struct MpvCommand {
+    command: CommandType,
+    request_id: i64,
+}
+
+// Thanks to the docs: https://github.com/mpv-player/mpv/blob/master/DOCS/man/ipc.rst#id7
+#[derive(Debug)]
+enum CommandType {
+    SetProperty { property: Property, value: Value },
+    GetProperty { property: Property },
+    ObserveProperty { property: Property, id: i64 },
+    GetVersion {},
+    ClientName {},
+    GetTimeUs {},
+}
+
+// Thanks to MPV man page for this
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum Property {
+    AudioSpeedCorrection,
+    VideoSpeedCorrection,
+    DisplaySyncActive,
+    Filename,
+    FileSize,
+    EstimatedFrameCount,
+    EstimatedFrameNumber,
+    Pid,
+    Path,
+    StreamOpenFilename,
+    MediaTitle,
+    FileFormat,
+    CurrentDemuxer,
+    StreamPath,
+    StreamPos,
+    StreamEnd,
+    Duration,
+}
+
+impl Serialize for CommandType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde_json::json;
+
+        let array = match self {
+            CommandType::SetProperty { property, value } => {
+                json!(["set_property", property, value])
+            }
+            CommandType::GetProperty { property } => {
+                json!(["get_property", property])
+            }
+            CommandType::GetVersion {} => {
+                json!(["get_version"])
+            }
+            CommandType::ClientName {} => {
+                json!(["client_name"])
+            }
+            CommandType::GetTimeUs {} => {
+                json!(["get_time_us"])
+            }
+            CommandType::ObserveProperty { id, property } => {
+                json!(["observe_property", id, property])
+            }
+        };
+
+        array.serialize(serializer)
+    }
+}
 
 fn main() -> std::io::Result<()> {
-    let json_str = r#"{"command":["set_property","pause", true]}"#;
-    let command = format!("{}\n", json_str); // Append END\n
+    let response = mpv_ipc::send_command(
+        MPV_SOCKET_PATH,
+        MpvCommand {
+            request_id: 0,
+            command: CommandType::GetProperty {
+                property: Property::Duration,
+            },
+        },
+    )?;
 
-    // Connect to MPV socket
-    let mut stream = UnixStream::connect("/tmp/mpv-socket")?;
+    println!("{:?}", response);
 
-    // Send the command
-    stream.write_all(command.as_bytes())?;
-    stream.flush()?;
-
-    // Get response
-    let mut response: [u8; 1024] = [0; 1024];
-    stream.read(&mut response)?;
-
-    // Filter the response by removing all the \0
-    let mut filtered_response = String::new();
-    for i in response {
-        let to_char = i as char;
-        if to_char != '\0' {
-            filtered_response.push(to_char);
-        }
-    }
-
-    let deserialized_response: Response = serde_json::from_str(&filtered_response)?;
-    println!("{:?}", deserialized_response);
-
-    stream.shutdown(Shutdown::Both)?;
     Ok(())
 }
