@@ -1,48 +1,25 @@
+use crate::config::BUFFER_SIZE;
+use crate::util::{filter_buffer, mpv_command_to_json, parse_response_string};
 use crate::{MpvCommand, Response};
 use std::io::prelude::*;
-use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
 
-pub fn send_command(socket_path: &str, command: MpvCommand) -> Result<Response, std::io::Error> {
+pub fn send_command(
+    mut stream: &UnixStream,
+    command: MpvCommand,
+) -> Result<[u8; 4096], std::io::Error> {
     // Sends a raw json command to the specified mpv socket
+    // This might return multiple responses including events
 
-    let json_command: String = serde_json::to_string(&command)?;
-
-    // Check if there is a newline at the end
-    let command = if json_command.ends_with('\n') {
-        json_command
-    } else {
-        format!("{json_command}\n")
-    };
-
-    // Connect to MPV socket
-    let mut stream = UnixStream::connect(socket_path)?;
+    let json_command = mpv_command_to_json(command)?;
 
     // Send the command
-    stream.write_all(command.as_bytes())?;
+    stream.write_all(json_command.as_bytes())?;
     stream.flush()?;
 
     // Get response
-    let mut buffer: [u8; 1024] = [0; 1024];
+    let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
     stream.read(&mut buffer)?;
 
-    // Filter the response by removing all the \0
-    let mut filtered_buffer = String::new();
-    for i in buffer {
-        let to_char = i as char;
-        if to_char != '\0' {
-            filtered_buffer.push(to_char);
-        }
-    }
-
-    stream.shutdown(Shutdown::Both)?;
-
-    println!("{}", filtered_buffer);
-
-    let parsed: Response = match serde_json::from_str(&filtered_buffer) {
-        Ok(resp) => resp,
-        Err(e) => panic!("Problem with parsing the response from the MPV IPC: {e}"),
-    };
-
-    return Ok(parsed);
+    return Ok(buffer);
 }
